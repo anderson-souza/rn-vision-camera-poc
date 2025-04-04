@@ -1,130 +1,133 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
-
-import React from 'react';
-import type {PropsWithChildren} from 'react';
+import {Skia} from '@shopify/react-native-skia';
+import React, {useRef, useState, useEffect} from 'react';
+import {StyleSheet, Text, View, TouchableOpacity, Alert} from 'react-native';
+import {useSkiaFrameProcessor} from 'react-native-vision-camera';
 import {
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  View,
-} from 'react-native';
+  Camera,
+  runAtTargetFps,
+  useCameraDevice,
+  useFrameProcessor,
+} from 'react-native-vision-camera';
+import {useCameraPermission} from 'react-native-vision-camera';
+import {useImageLabeler} from 'react-native-vision-camera-v3-image-labeling';
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+function App() {
+  const camera = useRef<Camera>(null);
+  const [hasPermission, setHasPermission] = useState(false);
+  const device = useCameraDevice('back', {
+    physicalDevices: [
+      'ultra-wide-angle-camera',
+      'wide-angle-camera',
+      'telephoto-camera',
+    ],
+  });
+  const {hasPermission: cameraPermission, requestPermission} =
+    useCameraPermission();
 
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
+  const devices = Camera.getAvailableCameraDevices();
+  console.log('🚀 ~ App ~ devices:', devices);
 
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-}
+  useEffect(() => {
+    (async () => {
+      const status = await requestPermission();
+      setHasPermission(status);
+    })();
+  }, [requestPermission]);
 
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+  // -------------------------------------------- FRAME PROCESSO
 
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+  const frameProcessor = useFrameProcessor(frame => {
+    'worklet';
+    console.log(`Frame: ${frame.width}x${frame.height} (${frame.pixelFormat})`);
+  }, []);
+
+  const {scanImage} = useImageLabeler();
+  const frameProcessorImageLabel = useFrameProcessor(frame => {
+    'worklet';
+    runAtTargetFps(2, () => {
+      const data = scanImage(frame);
+      console.log(data, 'data');
+    });
+  }, []);
+
+  const frameProcessorSkia = useSkiaFrameProcessor(frame => {
+    'worklet';
+    frame.render();
+
+    const centerX = frame.width / 2;
+    const centerY = frame.height / 2;
+    const rect = Skia.XYWHRect(centerX, centerY, 150, 150);
+    const paint = Skia.Paint();
+    paint.setColor(Skia.Color('red'));
+    frame.drawRect(rect, paint);
+  }, []);
+
+  // -------------------------------------
+
+  const takePhoto = async () => {
+    if (camera.current) {
+      try {
+        const photo = await camera.current.takePhoto({
+          flash: 'off',
+          enableShutterSound: true,
+        });
+        Alert.alert('Photo saved to', photo.path);
+      } catch (e) {
+        Alert.alert(
+          'Error taking photo',
+          e instanceof Error ? e.message : 'Unknown error',
+        );
+      }
+    }
   };
 
-  /*
-   * To keep the template simple and small we're adding padding to prevent view
-   * from rendering under the System UI.
-   * For bigger apps the reccomendation is to use `react-native-safe-area-context`:
-   * https://github.com/AppAndFlow/react-native-safe-area-context
-   *
-   * You can read more about it here:
-   * https://github.com/react-native-community/discussions-and-proposals/discussions/827
-   */
-  const safePadding = '5%';
+  if (!hasPermission) {
+    return (
+      <View style={styles.container}>
+        <Text>Camera permission not granted</Text>
+      </View>
+    );
+  }
+
+  if (!device) {
+    return (
+      <View style={styles.container}>
+        <Text>Camera device not available</Text>
+      </View>
+    );
+  }
 
   return (
-    <View style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
+    <View style={styles.container}>
+      <Camera
+        ref={camera}
+        style={StyleSheet.absoluteFill}
+        device={device}
+        isActive={true}
+        photo={true}
+        frameProcessor={frameProcessorSkia}
+        enableFpsGraph={true}
       />
-      <ScrollView
-        style={backgroundStyle}>
-        <View style={{paddingRight: safePadding}}>
-          <Header/>
-        </View>
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-            paddingHorizontal: safePadding,
-            paddingBottom: safePadding,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
+      <TouchableOpacity style={styles.captureButton} onPress={takePhoto} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
+  container: {
+    flex: 1,
+    backgroundColor: 'red',
   },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
-  },
-  highlight: {
-    fontWeight: '700',
+  captureButton: {
+    position: 'absolute',
+    bottom: 40,
+    alignSelf: 'center',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: 'white',
+    borderWidth: 5,
+    borderColor: '#f0f0f0',
   },
 });
 
