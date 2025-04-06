@@ -1,7 +1,6 @@
-import {Skia} from '@shopify/react-native-skia';
-import React, {useRef, useState, useEffect} from 'react';
+import React, {useRef, useState, useEffect, useMemo} from 'react';
 import {StyleSheet, Text, View, TouchableOpacity, Alert} from 'react-native';
-import {useSkiaFrameProcessor} from 'react-native-vision-camera';
+import {VisionCameraProxy} from 'react-native-vision-camera';
 import {
   Camera,
   runAtTargetFps,
@@ -50,17 +49,25 @@ function App() {
     });
   }, []);
 
-  const frameProcessorSkia = useSkiaFrameProcessor(frame => {
-    'worklet';
-    frame.render();
+  const plugin = useMemo(
+    () => VisionCameraProxy.initFrameProcessorPlugin('processImage', {}),
+    [],
+  );
 
-    const centerX = frame.width / 2;
-    const centerY = frame.height / 2;
-    const rect = Skia.XYWHRect(centerX, centerY, 150, 150);
-    const paint = Skia.Paint();
-    paint.setColor(Skia.Color('red'));
-    frame.drawRect(rect, paint);
-  }, []);
+  const processImage = useFrameProcessor(
+    frame => {
+      'worklet';
+      runAtTargetFps(2, () => {
+        if (plugin == null) {
+          throw new Error('Failed to load Frame Processor Plugin!');
+        }
+        const processed = plugin.call(frame, {test: 'test  '});
+        console.log('Processed frame:', processed);
+        return processed;
+      });
+    },
+    [plugin],
+  );
 
   // -------------------------------------
 
@@ -105,7 +112,8 @@ function App() {
         device={device}
         isActive={true}
         photo={true}
-        frameProcessor={frameProcessorSkia}
+        frameProcessor={processImage}
+        pixelFormat="yuv"
         enableFpsGraph={true}
       />
       <TouchableOpacity style={styles.captureButton} onPress={takePhoto} />

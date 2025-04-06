@@ -37,7 +37,7 @@ class OnnxProcessorPlugin(proxy: VisionCameraProxy, options: Map<String, Any>?) 
             }
             val combinedStream: InputStream = SequenceInputStream(Collections.enumeration(streams))
 
-            val detections = detect(byteArray)
+            val detections = detect(combinedStream)
 
             Log.d("OnnxProcessorPlugin", "Detected $detections objects")
 
